@@ -15,6 +15,8 @@ React + Vite + Firebase Firestore，部署於 GitHub Pages。
 3. GitHub：repo → Settings → Pages → Source 選 **GitHub Actions**；Settings → Secrets → Actions 新增 `.env.example` 內所有 `VITE_*` 變數。推送 `main` 即自動部署。
 4. （選用）EmailJS 建立範本，變數為 `to_email`、`to_name`、`code`。
 
+注意：`VITE_*` 值是在建置時寫入網頁，新增或修改 Secrets 後必須重新執行部署才會生效。
+
 ## 安全說明
 - 隨機碼只存雜湊，遺失無法找回，需講師於 Firebase Console 刪除該學員的 `members`/`secrets`/`ids` 文件後重新註冊。
 - 純前端的雜湊無法完全防止暴力破解；`VITE_ID_SALT` 會公開在前端程式中。若要更高安全性，請改用 Cloud Functions。
