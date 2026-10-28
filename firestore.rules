@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 公開名單：任何人可讀，只能新增（註冊）
+    match /members/{memberId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['name', 'createdAt'])
+                    && request.resource.data.name is string
+                    && request.resource.data.name.size() > 0
+                    && request.resource.data.name.size() <= 30;
+      allow update, delete: if false;
+    }
+
+    // 身分證雜湊：僅允許建立一次，用於阻擋重複註冊；不可讀取
+    match /ids/{idHash} {
+      allow create: if idHash.size() == 64;
+      allow read, update, delete: if false;
+    }
+
+    // 隨機碼雜湊：不可由前端讀取（規則內 get() 不受此限）
+    match /secrets/{memberId} {
+      allow create: if request.resource.data.keys().hasOnly(['codeHash'])
+                    && request.resource.data.codeHash.size() == 64;
+      allow read, update, delete: if false;
+    }
+
+    // 作業：公開可讀；寫入需附上正確的 codeHash
+    match /submissions/{subId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(
+            ['memberId', 'name', 'type', 'title', 'url', 'description', 'codeHash', 'updatedAt'])
+          && request.resource.data.type in ['cv', 'webapp']
+          && subId == request.resource.data.memberId + '_' + request.resource.data.type
+          && request.resource.data.url.matches('https?://.+')
+          && request.resource.data.title.size() <= 100
+          && request.resource.data.description.size() <= 1000
+          && get(/databases/$(database)/documents/secrets/$(request.resource.data.memberId)).data.codeHash
+             == request.resource.data.codeHash;
+      allow delete: if false;
+    }
+  }
+}
