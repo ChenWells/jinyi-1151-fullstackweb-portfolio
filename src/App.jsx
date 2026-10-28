@@ -70,7 +70,7 @@ export default function App() {
       {tab === 'register' && <Register onDone={() => setTab('mywork')} />}
       {tab === 'mywork' && <MyWork {...common} me={me} onLogin={setMeId} />}
       {tab === 'peer' && <Peer {...common} me={me} myPeer={myPeer} onLogin={setMeId} />}
-      {tab === 'teacher' && <Teacher subs={subs} teacherRatings={teacherRatings} isTeacher={isTeacher} />}
+      {tab === 'teacher' && <Teacher members={members} subs={subs} teacherRatings={teacherRatings} isTeacher={isTeacher} />}
     </div>
   );
 }
