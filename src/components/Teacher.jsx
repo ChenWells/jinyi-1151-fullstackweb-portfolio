@@ -1,9 +1,48 @@
 import { useState } from 'react';
-import { WORK_TYPES, teacherLogin, saveTeacherRating } from '../lib/db.js';
+import { WORK_TYPES, teacherLogin, saveTeacherRating, resetMemberCode } from '../lib/db.js';
 import { TEACHER_CRITERIA } from '../lib/criteria.js';
 import RatingForm from './RatingForm.jsx';
 
-export default function Teacher({ subs, teacherRatings, isTeacher }) {
+function CodeReset({ members }) {
+  const [memberId, setMemberId] = useState('');
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+
+  async function reset() {
+    const m = members.find((x) => x.id === memberId);
+    if (!m || !window.confirm(`確定重設「${m.name}」的隨機碼？舊隨機碼會立即失效。`)) return;
+    setError('');
+    try {
+      setResult({ name: m.name, code: await resetMemberCode(m.id) });
+    } catch (e) {
+      setResult(null);
+      setError(e.message);
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 20 }}>
+      <h2>🔑 重設學員隨機碼</h2>
+      <p className="muted">隨機碼僅存雜湊，無法查詢舊碼；重設後請將新隨機碼轉達給學員。</p>
+      <label>學員
+        <select value={memberId} onChange={(e) => { setMemberId(e.target.value); setResult(null); }}>
+          <option value="">請選擇</option>
+          {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
+      </label>
+      <button onClick={reset} disabled={!memberId}>產生新隨機碼</button>
+      {error && <p className="err">{error}</p>}
+      {result && (
+        <div>
+          <p>{result.name} 的新隨機碼（僅顯示這一次）：</p>
+          <div className="code">{result.code}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function Teacher({ members, subs, teacherRatings, isTeacher }) {
   const [error, setError] = useState('');
 
   if (!isTeacher) {
@@ -19,6 +58,7 @@ export default function Teacher({ subs, teacherRatings, isTeacher }) {
 
   return (
     <div>
+      <CodeReset members={members} />
       {subs.length === 0 && <p className="muted">還沒有作業可評。</p>}
       <div className="grid2">
         {subs.map((s) => (
