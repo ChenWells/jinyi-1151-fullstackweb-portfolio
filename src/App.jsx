@@ -1,22 +1,50 @@
 import { useEffect, useState } from 'react';
-import { configured, subscribeMembers, subscribeSubmissions } from './lib/db.js';
+import {
+  configured, onAuth, isTeacherUser, restoreMember, logout,
+  subscribeMembers, subscribeSubmissions, subscribeTeacherRatings, subscribeStats, subscribeMyPeerRatings,
+} from './lib/db.js';
 import Feed from './components/Feed.jsx';
 import Register from './components/Register.jsx';
 import MyWork from './components/MyWork.jsx';
+import Peer from './components/Peer.jsx';
+import Teacher from './components/Teacher.jsx';
 
-const TABS = [['feed', '📡 即時動態'], ['register', '📝 註冊'], ['mywork', '🔑 我的作業']];
+const TABS = [
+  ['feed', '📡 即時動態'], ['register', '📝 註冊'], ['mywork', '🔑 我的作業'],
+  ['peer', '🤝 同儕互評'], ['teacher', '🎓 講師評分'],
+];
 
 export default function App() {
   const [tab, setTab] = useState('feed');
   const [members, setMembers] = useState([]);
   const [subs, setSubs] = useState([]);
+  const [teacherRatings, setTeacherRatings] = useState({});
+  const [stats, setStats] = useState({});
+  const [myPeer, setMyPeer] = useState({});
+  const [meId, setMeId] = useState(null);
+  const [isTeacher, setIsTeacher] = useState(false);
 
   useEffect(() => {
     if (!configured) return undefined;
-    const a = subscribeMembers(setMembers);
-    const b = subscribeSubmissions(setSubs);
-    return () => { a(); b(); };
+    const unsubs = [
+      subscribeMembers(setMembers), subscribeSubmissions(setSubs),
+      subscribeTeacherRatings(setTeacherRatings), subscribeStats(setStats),
+      onAuth(async (user) => {
+        setIsTeacher(isTeacherUser(user));
+        setMeId(await restoreMember(user).catch(() => null));
+      }),
+    ];
+    return () => unsubs.forEach((u) => u());
   }, []);
+
+  useEffect(() => {
+    setMyPeer({});
+    if (!meId) return undefined;
+    return subscribeMyPeerRatings(meId, setMyPeer);
+  }, [meId]);
+
+  const me = members.find((m) => m.id === meId) || null;
+  const common = { members, subs, teacherRatings, stats };
 
   return (
     <div className="wrap">
@@ -32,9 +60,17 @@ export default function App() {
           <button key={k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{label}</button>
         ))}
       </nav>
-      {tab === 'feed' && <Feed members={members} subs={subs} />}
+      {(me || isTeacher) && (
+        <p className="muted">
+          目前身分：{isTeacher ? '講師' : me.name}　
+          <button className="link" onClick={logout}>登出</button>
+        </p>
+      )}
+      {tab === 'feed' && <Feed {...common} />}
       {tab === 'register' && <Register onDone={() => setTab('mywork')} />}
-      {tab === 'mywork' && <MyWork members={members} subs={subs} />}
+      {tab === 'mywork' && <MyWork {...common} me={me} onLogin={setMeId} />}
+      {tab === 'peer' && <Peer {...common} me={me} myPeer={myPeer} onLogin={setMeId} />}
+      {tab === 'teacher' && <Teacher subs={subs} teacherRatings={teacherRatings} isTeacher={isTeacher} />}
     </div>
   );
 }

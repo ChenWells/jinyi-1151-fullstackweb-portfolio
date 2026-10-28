@@ -2,42 +2,131 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 公開名單：任何人可讀，只能新增（註冊）
+    // ---- 共用函式 ----
+    function teacher() {
+      return request.auth != null
+        && request.auth.token.email == 'fgchen@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    // 目前登入的學員 ID（登入時須通過隨機碼比對才寫得進 sessions）
+    function me() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/sessions/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/sessions/$(request.auth.uid)).data.memberId
+        : null;
+    }
+
+    function score(v) { return v is int && v >= 1 && v <= 5; }
+
+    // ---- 學員名單：公開可讀、可新增；講師可刪除 ----
     match /members/{memberId} {
       allow read: if true;
       allow create: if request.resource.data.keys().hasOnly(['name', 'createdAt'])
                     && request.resource.data.name is string
                     && request.resource.data.name.size() > 0
                     && request.resource.data.name.size() <= 30;
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if teacher();
     }
 
-    // 身分證雜湊：僅允許建立一次，用於阻擋重複註冊；不可讀取
+    // ---- 身分證雜湊：只能建立，不可讀 ----
     match /ids/{idHash} {
       allow create: if idHash.size() == 64;
-      allow read, update, delete: if false;
+      allow read, update: if false;
+      allow delete: if teacher();
     }
 
-    // 隨機碼雜湊：不可由前端讀取（規則內 get() 不受此限）
+    // ---- 隨機碼雜湊：不可由前端讀取；講師可重設 ----
     match /secrets/{memberId} {
       allow create: if request.resource.data.keys().hasOnly(['codeHash'])
                     && request.resource.data.codeHash.size() == 64;
-      allow read, update, delete: if false;
+      allow update: if teacher()
+                    && request.resource.data.keys().hasOnly(['codeHash'])
+                    && request.resource.data.codeHash.size() == 64;
+      allow read: if false;
+      allow delete: if teacher();
     }
 
-    // 作業：公開可讀；寫入需附上正確的 codeHash
+    // ---- 登入工作階段：以隨機碼換取身分，只有本人可讀 ----
+    match /sessions/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['memberId', 'codeHash'])
+        && get(/databases/$(database)/documents/secrets/$(request.resource.data.memberId)).data.codeHash
+           == request.resource.data.codeHash;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ---- 作業：公開可讀；僅本人（已登入）可寫 ----
     match /submissions/{subId} {
       allow read: if true;
       allow create, update: if request.resource.data.keys().hasOnly(
-            ['memberId', 'name', 'type', 'title', 'url', 'description', 'codeHash', 'updatedAt'])
+            ['memberId', 'name', 'type', 'title', 'url', 'description', 'updatedAt'])
+          && me() == request.resource.data.memberId
           && request.resource.data.type in ['cv', 'webapp']
           && subId == request.resource.data.memberId + '_' + request.resource.data.type
           && request.resource.data.url.matches('https?://.+')
           && request.resource.data.title.size() <= 100
-          && request.resource.data.description.size() <= 1000
-          && get(/databases/$(database)/documents/secrets/$(request.resource.data.memberId)).data.codeHash
-             == request.resource.data.codeHash;
-      allow delete: if false;
+          && request.resource.data.description.size() <= 1000;
+      allow delete: if teacher();
+    }
+
+    // ---- 講師評分：公開可讀；僅講師可寫 ----
+    match /teacherRatings/{subId} {
+      allow read: if true;
+      allow create, update: if teacher()
+          && request.resource.data.keys().hasOnly(
+            ['subId', 'memberId', 'technical', 'creativity', 'completion', 'presentation',
+             'collaboration', 'total', 'comment', 'updatedAt'])
+          && request.resource.data.subId == subId
+          && exists(/databases/$(database)/documents/submissions/$(subId))
+          && score(request.resource.data.technical) && score(request.resource.data.creativity)
+          && score(request.resource.data.completion) && score(request.resource.data.presentation)
+          && score(request.resource.data.collaboration)
+          && request.resource.data.total == 6 * request.resource.data.technical
+               + 5 * request.resource.data.creativity + 4 * request.resource.data.completion
+               + 3 * request.resource.data.presentation + 2 * request.resource.data.collaboration
+          && request.resource.data.comment.size() <= 1000;
+      allow delete: if teacher();
+    }
+
+    // ---- 同儕評分：僅評分者本人與講師可讀（評語匿名）----
+    match /peerRatings/{ratingId} {
+      allow read: if teacher()
+        || (me() != null && (resource == null || resource.data.raterId == me()));
+      allow create, update: if me() != null
+          && request.resource.data.keys().hasOnly(
+            ['raterId', 'subId', 'targetMemberId', 'quality', 'innovation', 'teamwork',
+             'total', 'comment', 'updatedAt'])
+          && request.resource.data.raterId == me()
+          && ratingId == request.resource.data.raterId + '_' + request.resource.data.subId
+          && request.resource.data.raterId != request.resource.data.targetMemberId
+          && (request.resource.data.subId == request.resource.data.targetMemberId + '_cv'
+              || request.resource.data.subId == request.resource.data.targetMemberId + '_webapp')
+          && exists(/databases/$(database)/documents/submissions/$(request.resource.data.subId))
+          && score(request.resource.data.quality) && score(request.resource.data.innovation)
+          && score(request.resource.data.teamwork)
+          && request.resource.data.total == 8 * request.resource.data.quality
+               + 6 * request.resource.data.innovation + 6 * request.resource.data.teamwork
+          && request.resource.data.comment.size() <= 500;
+      allow delete: if teacher();
+    }
+
+    // ---- 同儕統計（公開）：只能隨「自己的評分」在同一筆交易等量變動 ----
+    match /stats/{subId} {
+      allow read: if true;
+      allow create, update: if me() != null
+          && request.resource.data.keys().hasOnly(['sum', 'count', 'updatedAt'])
+          && request.resource.data.sum == (resource == null ? 0 : resource.data.sum)
+               + (existsAfter(/databases/$(database)/documents/peerRatings/$(me() + '_' + subId))
+                    ? getAfter(/databases/$(database)/documents/peerRatings/$(me() + '_' + subId)).data.total : 0)
+               - (exists(/databases/$(database)/documents/peerRatings/$(me() + '_' + subId))
+                    ? get(/databases/$(database)/documents/peerRatings/$(me() + '_' + subId)).data.total : 0)
+          && request.resource.data.count == (resource == null ? 0 : resource.data.count)
+               + (existsAfter(/databases/$(database)/documents/peerRatings/$(me() + '_' + subId)) ? 1 : 0)
+               - (exists(/databases/$(database)/documents/peerRatings/$(me() + '_' + subId)) ? 1 : 0);
+      allow delete: if teacher();
     }
   }
 }
