@@ -82,6 +82,17 @@ export async function teacherLogin() {
 
 export const logout = () => signOut(auth);
 
+// 講師重設：產生新隨機碼覆蓋雜湊（舊碼失效），明文只回傳給講師畫面
+export async function resetMemberCode(memberId) {
+  const code = generateCode();
+  try {
+    await setDoc(doc(db, 'secrets', memberId), { codeHash: await hashCode(code) });
+  } catch (e) {
+    throw permissionError(e, '只有講師帳號可以重設隨機碼');
+  }
+  return code;
+}
+
 // ---------- 作業 ----------
 export async function saveSubmission({ member, type, title, url, description }) {
   try {
