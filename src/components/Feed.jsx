@@ -1,4 +1,5 @@
 import { WORK_TYPES } from '../lib/db.js';
+import { average } from '../lib/criteria.js';
 
 const ago = (t) => {
   const s = Math.max(0, (Date.now() - t) / 1000);
@@ -8,7 +9,17 @@ const ago = (t) => {
   return new Date(t).toLocaleDateString('zh-TW');
 };
 
-export default function Feed({ members, subs }) {
+function Scores({ teacher, stat }) {
+  const peer = average(stat);
+  return (
+    <div className="badges">
+      <span>🎓 講師 {teacher ? teacher.total : '--'}</span>
+      <span>🤝 同儕 {peer !== null ? `${peer}（${stat.count} 人）` : '-- (0)'}</span>
+    </div>
+  );
+}
+
+export default function Feed({ members, subs, teacherRatings, stats }) {
   const byKey = new Map(subs.map((s) => [s.id, s]));
   const done = (type) => subs.filter((s) => s.type === type).length;
 
@@ -25,6 +36,8 @@ export default function Feed({ members, subs }) {
                 <b>{s.name}</b> 更新了 {WORK_TYPES[s.type]?.label}
                 <div><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}</a></div>
                 {s.description && <div className="muted">{s.description}</div>}
+                <Scores teacher={teacherRatings[s.id]} stat={stats[s.id]} />
+                {teacherRatings[s.id]?.comment && <div className="muted">講師：{teacherRatings[s.id].comment}</div>}
                 <small className="muted">{ago(s.updatedAt)}</small>
               </div>
             </li>
@@ -44,7 +57,7 @@ export default function Feed({ members, subs }) {
                   const s = byKey.get(`${m.id}_${t}`);
                   return (
                     <td key={t}>
-                      {s ? <a href={s.url} target="_blank" rel="noopener noreferrer">✅</a> : '—'}
+                      {s ? <a href={s.url} target="_blank" rel="noopener noreferrer">✅ {teacherRatings[s.id]?.total ?? ''}</a> : '—'}
                     </td>
                   );
                 })}

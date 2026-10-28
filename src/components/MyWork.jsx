@@ -1,52 +1,19 @@
 import { useState } from 'react';
 import { WORK_TYPES, saveSubmission } from '../lib/db.js';
+import Login from './Login.jsx';
 
-export default function MyWork({ members, subs }) {
-  const [memberId, setMemberId] = useState('');
-  const [code, setCode] = useState('');
-  const [auth, setAuth] = useState(null);
-
-  if (!auth) {
-    return (
-      <form
-        className="card"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const member = members.find((m) => m.id === memberId);
-          if (member && code.trim()) setAuth({ member, code: code.trim() });
-        }}
-      >
-        <h2>登入修改作業</h2>
-        <label>姓名
-          <select value={memberId} onChange={(e) => setMemberId(e.target.value)} required>
-            <option value="">請選擇</option>
-            {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-        </label>
-        <label>隨機碼
-          <input value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" required />
-        </label>
-        <button>登入</button>
-        <p className="muted">隨機碼會在儲存作業時驗證。</p>
-      </form>
-    );
-  }
-
+export default function MyWork({ members, subs, me, onLogin }) {
+  if (!me) return <Login members={members} onLogin={onLogin} title="登入修改作業" />;
   return (
-    <div>
-      <p>
-        👋 {auth.member.name}　<button className="link" onClick={() => setAuth(null)}>登出</button>
-      </p>
-      <div className="grid2">
-        {Object.keys(WORK_TYPES).map((type) => (
-          <WorkForm key={type} type={type} auth={auth} existing={subs.find((s) => s.id === `${auth.member.id}_${type}`)} />
-        ))}
-      </div>
+    <div className="grid2">
+      {Object.keys(WORK_TYPES).map((type) => (
+        <WorkForm key={type} type={type} member={me} existing={subs.find((s) => s.id === `${me.id}_${type}`)} />
+      ))}
     </div>
   );
 }
 
-function WorkForm({ type, auth, existing }) {
+function WorkForm({ type, member, existing }) {
   const [f, setF] = useState({
     title: existing?.title || '', url: existing?.url || '', description: existing?.description || '',
   });
@@ -59,7 +26,7 @@ function WorkForm({ type, auth, existing }) {
     setBusy(true);
     setMsg(null);
     try {
-      await saveSubmission({ member: auth.member, code: auth.code, type, ...f });
+      await saveSubmission({ member, type, ...f });
       setMsg({ ok: true, text: '已儲存，動態牆即時更新' });
     } catch (err) {
       setMsg({ ok: false, text: err.message });
